@@ -1,6 +1,5 @@
 import requests
 from bs4 import BeautifulSoup
-import os
 import time
 import random
 import re
@@ -23,33 +22,44 @@ def send_notification(message, priority="urgent"):
 
 def check_stock():
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
     }
     
-    # Random delay to stay under the radar
-    time.sleep(random.randint(5, 40))
+    # Random delay to stay stealthy
+    time.sleep(random.randint(5, 30))
 
     try:
         response = requests.get(URL, headers=headers, timeout=20)
         
-        # FIX 1: Check if the website actually loaded correctly
+        # FAILSAFE 1: If the site returns an error (403, 503, 404), STOP.
         if response.status_code != 200:
-            print(f"Site error: {response.status_code}. Skipping this check.")
+            print(f"Site returned error {response.status_code}. Skipping to avoid false positive.")
             return
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # FIX 2: Look for the SPECIFIC "Add to basket" button class or text
-        # We look for the button specifically rather than just 'any' text on the page
-        buy_button = soup.find(string=re.compile(r'add to basket', re.IGNORECASE))
-        cart_form = soup.find("form", class_="cart")
+        # FAILSAFE 2: Verify we are actually on the Yellow Titanium page
+        # (Checks if the specific title is in the main heading)
+        page_title = soup.find("h1")
+        if not page_title or "Titanium Yellow" not in page_title.get_text():
+            print("Could not verify page title. Skipping.")
+            return
+
+        # FAILSAFE 3: Look for the specific 'Awaiting Stock' text. 
+        # If this text exists, the watch is DEFINITELY NOT ready.
+        is_sold_out = soup.find(string=re.compile(r'Awaiting Stock', re.IGNORECASE))
         
-        # If the button exists OR the cart form is visible
-        if buy_button or cart_form:
-            print("WATCH FOUND! Sending notification...")
+        # FAILSAFE 4: Look for the 'Add to basket' button.
+        # Scurfa uses a specific class for their primary buy button.
+        buy_button = soup.find("button", class_=re.compile(r'single_add_to_cart_button', re.IGNORECASE))
+        
+        # LOGIC: Only alert if "Awaiting Stock" is GONE and the "Buy Button" is PRESENT.
+        if not is_sold_out and buy_button:
+            print("REAL STOCK DETECTED!")
             send_notification(f"TITANIUM YELLOW IS LIVE! Buy now: {URL}")
         else:
-            print(f"[{time.strftime('%H:%M:%S')}] Still 'Awaiting Stock'. No false alarm.")
+            print(f"[{time.strftime('%H:%M:%S')}] Still Awaiting Stock. No false alarm.")
             
     except Exception as e:
         print(f"Request failed: {e}")
