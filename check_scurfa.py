@@ -6,7 +6,7 @@ import re
 
 # --- CONFIGURATION ---
 URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
-URL = "https://www.scurfawatches.com/product/top-side-crew-rose-gold-black-dial-mens/"
+# URL = "https://www.scurfawatches.com/product/top-side-crew-rose-gold-black-dial-mens/"
 NTFY_TOPIC = "scurfa_yellow_titan_2026" 
 
 def send_notification(message, priority="urgent"):
@@ -43,9 +43,9 @@ def check_stock():
         # FAILSAFE 2: Verify we are actually on the Yellow Titanium page
         # (Checks if the specific title is in the main heading)
         page_title = soup.find("h1")
-        # if not page_title or "Titanium Yellow" not in page_title.get_text():
-        #     print("Could not verify page title. Skipping.")
-        #     return
+        if not page_title or "Titanium Yellow" not in page_title.get_text():
+            print("Could not verify page title. Skipping.")
+            return
 
         # FAILSAFE 3: Look for the specific 'Awaiting Stock' text. 
         # If this text exists, the watch is DEFINITELY NOT ready.
