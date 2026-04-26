@@ -3,48 +3,56 @@ from bs4 import BeautifulSoup
 import os
 import time
 import random
+import re
 
 # --- CONFIGURATION ---
 URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
-# This must match exactly what you typed in the phone app
 NTFY_TOPIC = "scurfa_yellow_titan_2026" 
 
-def send_notification(message):
+def send_notification(message, priority="urgent"):
     try:
-        # ntfy.sh is a simple POST request. No API key needed!
         requests.post(f"https://ntfy.sh/{NTFY_TOPIC}",
             data=message.encode('utf-8'),
             headers={
                 "Title": "SCURFA WATCH ALERT",
-                "Priority": "urgent",
+                "Priority": priority,
                 "Tags": "watch,rotating_light"
             })
-        print("Notification pushed to phone!")
     except Exception as e:
         print(f"Error sending notification: {e}")
 
 def check_stock():
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     }
     
-    # Stealth delay: GitHub starts the job, but we wait 1-30s before hitting Scurfa
-    time.sleep(random.randint(1, 30))
+    # Random delay to stay under the radar
+    time.sleep(random.randint(5, 40))
 
     try:
-        response = requests.get(URL, headers=headers, timeout=15)
+        response = requests.get(URL, headers=headers, timeout=20)
+        
+        # FIX 1: Check if the website actually loaded correctly
+        if response.status_code != 200:
+            print(f"Site error: {response.status_code}. Skipping this check.")
+            return
+
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # We look for the "Add to basket" button. 
-        # If it's there, or if "Awaiting Stock" is gone, we alert.
-        if "add to basket" in soup.get_text().lower() or "awaiting stock" not in soup.get_text().lower():
-            print("WATCH FOUND!")
-            send_notification(f"The Titanium Yellow is IN STOCK! Buy now: {URL}")
+        # FIX 2: Look for the SPECIFIC "Add to basket" button class or text
+        # We look for the button specifically rather than just 'any' text on the page
+        buy_button = soup.find(string=re.compile(r'add to basket', re.IGNORECASE))
+        cart_form = soup.find("form", class_="cart")
+        
+        # If the button exists OR the cart form is visible
+        if buy_button or cart_form:
+            print("WATCH FOUND! Sending notification...")
+            send_notification(f"TITANIUM YELLOW IS LIVE! Buy now: {URL}")
         else:
-            print(f"[{time.strftime('%H:%M:%S')}] Still checking...")
+            print(f"[{time.strftime('%H:%M:%S')}] Still 'Awaiting Stock'. No false alarm.")
             
     except Exception as e:
-        print(f"Site check failed: {e}")
+        print(f"Request failed: {e}")
 
 if __name__ == "__main__":
     check_stock()
