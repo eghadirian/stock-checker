@@ -43,9 +43,9 @@ def check_stock():
         # FAILSAFE 2: Verify we are actually on the Yellow Titanium page
         # (Checks if the specific title is in the main heading)
         page_title = soup.find("h1")
-        if not page_title or "Titanium Yellow" not in page_title.get_text():
-            print("Could not verify page title. Skipping.")
-            return
+        # if not page_title or "Titanium Yellow" not in page_title.get_text():
+        #     print("Could not verify page title. Skipping.")
+        #     return
 
         # FAILSAFE 3: Look for the specific 'Awaiting Stock' text. 
         # If this text exists, the watch is DEFINITELY NOT ready.
