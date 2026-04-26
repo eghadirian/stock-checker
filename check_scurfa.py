@@ -37,7 +37,7 @@ def check_stock():
         
         # We look for the "Add to basket" button. 
         # If it's there, or if "Awaiting Stock" is gone, we alert.
-        if "Add to basket" in soup.get_text() or "Awaiting Stock" not in soup.get_text():
+        if "add to basket" in soup.get_text().lower() or "awaiting stock" not in soup.get_text().lower():
             print("WATCH FOUND!")
             send_notification(f"The Titanium Yellow is IN STOCK! Buy now: {URL}")
         else:
