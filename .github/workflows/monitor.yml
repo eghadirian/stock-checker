@@ -1,0 +1,19 @@
+name: Scurfa Watch Monitor
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Runs every 5 minutes (the safest free interval)
+  workflow_dispatch:       # Allows you to click "Run" manually to test
+
+jobs:
+  run-monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+      - name: Run Check
+        run: python check_scurfa.py
