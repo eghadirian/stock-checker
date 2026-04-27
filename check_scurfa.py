@@ -33,22 +33,66 @@ def send_notifications(message):
         except Exception as e:
             print(f"Telegram failed: {e}")
 
+def is_cart_button(tag):
+    # Target common clickable elements
+    if tag.name not in ['button', 'a', 'input']:
+        return False
+
+    # A generic regex pattern for common shopping actions
+    # Matches: add to cart, buy now, purchase, checkout, etc.
+    pattern = re.compile(r'add.*to.*cart|buy.*now|purchase|check.*out|atc', re.I)
+
+    # 1. Check the visible text (e.g., <button>Add to Cart</button>)
+    if pattern.search(tag.get_text(strip=True)):
+        return True
+
+    # 2. Check internal attributes (class, id, name, value)
+    for attr in ['class', 'id', 'name', 'value']:
+        val = tag.get(attr, "")
+        # Handle cases where class is a list ['btn', 'btn-cart']
+        if isinstance(val, list):
+            val = " ".join(val)
+        if pattern.search(str(val)):
+            return True
+
+    return False
+
+import re
+
+def is_sold_out(soup):
+    # List of common phrases used when an item is unavailable
+    sold_out_phrases = [
+        r'out of stock', 
+        r'sold out', 
+        r'awaiting stock', 
+        r'unavailable', 
+        r'backorder',
+        r'not in stock'
+    ]
+    pattern = re.compile('|'.join(sold_out_phrases), re.I)
+    found = soup.find(string=pattern)
+    
+    return found is not None
+
+
 def check_stock():
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     time.sleep(random.randint(5, 30))
 
     try:
         response = requests.get(URL, headers=headers, timeout=20)
-        if response.status_code != 200: return
+        if response.status_code != 200:
+            print(f"Error: Status code {response.status_code}")
+            return 
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # Stricter detection logic
-        is_sold_out = soup.find(string=re.compile(r'Awaiting Stock', re.IGNORECASE))
-        buy_button = soup.find("button", class_=re.compile(r'single_add_to_cart_button', re.IGNORECASE))
+        is_sold_t =  is_sold_out(soup)
+        buy_button = soup.find_all(is_cart_button)
         
-        if not is_sold_out and buy_button:
-            msg = f"🚨 *SCURFA IN STOCK!* 🚨\nThe Titanium Yellow is ready! [Buy Now]({URL})"
+        if not is_sold_t and buy_button:
+            msg = f"🚨 *ITEM IN STOCK!* 🚨\nIt is is ready! [Buy Now]({URL})"
             send_notifications(msg)
         else:
             print(f"[{time.strftime('%H:%M:%S')}] Still awaiting stock.")
