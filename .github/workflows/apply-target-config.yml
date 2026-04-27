@@ -40,7 +40,20 @@ jobs:
           if not isinstance(targets, list) or not targets:
               raise SystemExit("Targets payload must be a non-empty list.")
 
-          rendered = "TARGETS = " + json.dumps(targets, indent=4, ensure_ascii=False)
+          normalized_targets = []
+          for idx, item in enumerate(targets, start=1):
+              if not isinstance(item, dict):
+                  raise SystemExit(f"Target #{idx} must be an object.")
+              url = str(item.get("url", "")).strip()
+              if not url:
+                  raise SystemExit(f"Target #{idx} is missing a valid url.")
+              name = str(item.get("name", "")).strip()
+              target_obj = {"url": url}
+              if name:
+                  target_obj["name"] = name
+              normalized_targets.append(target_obj)
+
+          rendered = "TARGETS = " + json.dumps(normalized_targets, indent=4, ensure_ascii=False)
 
           path = "check_scurfa.py"
           with open(path, "r", encoding="utf-8") as f:

@@ -23,7 +23,7 @@
 </head>
 <body>
   <h1>SCURFA Bulk Target Updater</h1>
-  <p class="hint">No PAT entry needed. This creates a GitHub issue containing your target list, and a repo GitHub Action (using repo secrets/token) applies the update automatically.</p>
+  <p class="hint">No PAT entry needed. Add one or more target URLs (optional name), then submit. A GitHub issue is created and a repo GitHub Action applies the update automatically.</p>
 
   <div class="row" style="margin: 1rem 0;">
     <button id="addTarget" type="button">+ Add Target</button>
@@ -63,13 +63,6 @@
         </label>
       </div>
 
-      <label>is_sold_out (regex text)
-        <input class="soldOut" required placeholder="Awaiting Stock" />
-      </label>
-
-      <label>buy_button (button class regex text)
-        <input class="buyButton" required placeholder="single_add_to_cart_button" />
-      </label>
     </div>
   </template>
 
@@ -91,8 +84,6 @@
       const card = node.querySelector('.target-card');
       card.querySelector('.name').value = initial.name || '';
       card.querySelector('.url').value = initial.url || '';
-      card.querySelector('.soldOut').value = initial.soldOut || 'Awaiting Stock';
-      card.querySelector('.buyButton').value = initial.buyButton || 'single_add_to_cart_button';
 
       card.querySelector('.removeTarget').addEventListener('click', () => {
         card.remove();
@@ -108,9 +99,7 @@
       return cards.map((card) => ({
         name: card.querySelector('.name').value.trim(),
         url: card.querySelector('.url').value.trim(),
-        sold_out_pattern: card.querySelector('.soldOut').value.trim(),
-        buy_button_class_pattern: card.querySelector('.buyButton').value.trim(),
-      })).filter((t) => t.url && t.sold_out_pattern && t.buy_button_class_pattern);
+      })).filter((t) => t.url);
     }
 
     function buildIssueBody(targets) {
@@ -130,8 +119,6 @@
     addTarget({
       name: 'Titanium Yellow',
       url: 'https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/',
-      soldOut: 'Awaiting Stock',
-      buyButton: 'single_add_to_cart_button',
     });
 
     document.getElementById('cfgForm').addEventListener('submit', (e) => {

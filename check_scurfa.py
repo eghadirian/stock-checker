@@ -11,10 +11,10 @@ TARGETS = [
     {
         "name": "Titanium Yellow",
         "url": "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/",
-        "sold_out_pattern": "Awaiting Stock",
-        "buy_button_class_pattern": "single_add_to_cart_button",
     },
 ]
+SOLD_OUT_PATTERN = "Awaiting Stock"
+BUY_BUTTON_CLASS_PATTERN = "single_add_to_cart_button"
 
 # Get these from your GitHub Secrets
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -40,11 +40,9 @@ def send_notifications(message):
 
 def check_target(target):
     url = target.get("url", "")
-    sold_out_pattern = target.get("sold_out_pattern", "")
-    buy_button_class_pattern = target.get("buy_button_class_pattern", "")
     name = target.get("name") or url
 
-    if not url or not sold_out_pattern or not buy_button_class_pattern:
+    if not url:
         print(f"Skipping invalid target config: {target}")
         return
 
@@ -57,10 +55,10 @@ def check_target(target):
             return
 
         soup = BeautifulSoup(response.text, "html.parser")
-        is_sold_out = soup.find(string=re.compile(sold_out_pattern, re.IGNORECASE))
+        is_sold_out = soup.find(string=re.compile(SOLD_OUT_PATTERN, re.IGNORECASE))
         buy_button = soup.find(
             "button",
-            class_=re.compile(buy_button_class_pattern, re.IGNORECASE),
+            class_=re.compile(BUY_BUTTON_CLASS_PATTERN, re.IGNORECASE),
         )
 
         if not is_sold_out and buy_button:
