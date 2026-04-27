@@ -23,7 +23,7 @@
 </head>
 <body>
   <h1>SCURFA Bulk Target Updater</h1>
-  <p class="hint">Add as many URL + stock-rule combinations as you want. Use the <strong>-</strong> button next to each URL to delete an entry. After any add/delete, click submit to rewrite <code>TARGETS</code> in <code>check_scurfa.py</code> and commit to GitHub.</p>
+  <p class="hint">No PAT entry needed. This creates a GitHub issue containing your target list, and a repo GitHub Action (using repo secrets/token) applies the update automatically.</p>
 
   <div class="row" style="margin: 1rem 0;">
     <button id="addTarget" type="button">+ Add Target</button>
@@ -40,15 +40,7 @@
       <input id="repo" value="stock-checker" required />
     </label>
 
-    <label>Branch
-      <input id="branch" value="main" required />
-    </label>
-
-    <label>GitHub Personal Access Token (repo scope)
-      <input id="token" type="password" required placeholder="ghp_..." />
-    </label>
-
-    <button type="submit">Update check_scurfa.py and Push</button>
+    <button type="submit">Create Config Update Issue</button>
   </form>
 
   <h3>Status</h3>
@@ -88,8 +80,6 @@
 
     const log = (msg) => { statusEl.textContent = msg; };
 
-    const escPy = (v) => String(v).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-
     function refreshIndexes() {
       [...targetsEl.querySelectorAll('.target-card')].forEach((card, i) => {
         card.querySelector('.target-index').textContent = String(i + 1);
@@ -118,22 +108,22 @@
       return cards.map((card) => ({
         name: card.querySelector('.name').value.trim(),
         url: card.querySelector('.url').value.trim(),
-        soldOut: card.querySelector('.soldOut').value.trim(),
-        buyButton: card.querySelector('.buyButton').value.trim(),
-      })).filter((t) => t.url && t.soldOut && t.buyButton);
+        sold_out_pattern: card.querySelector('.soldOut').value.trim(),
+        buy_button_class_pattern: card.querySelector('.buyButton').value.trim(),
+      })).filter((t) => t.url && t.sold_out_pattern && t.buy_button_class_pattern);
     }
 
-    function buildTargetsBlock(items) {
-      const rows = items.map((item) => [
-        '    {',
-        item.name ? `        "name": "${escPy(item.name)}",` : null,
-        `        "url": "${escPy(item.url)}",`,
-        `        "sold_out_pattern": "${escPy(item.soldOut)}",`,
-        `        "buy_button_class_pattern": "${escPy(item.buyButton)}",`,
-        '    },',
-      ].filter(Boolean).join('\n'));
-
-      return `TARGETS = [\n${rows.join('\n')}\n]`;
+    function buildIssueBody(targets) {
+      const json = JSON.stringify(targets, null, 2);
+      return [
+        'Auto config update request generated from update-config.html.',
+        '',
+        '<!-- STOCK_TARGETS_PAYLOAD_START -->',
+        '```json',
+        json,
+        '```',
+        '<!-- STOCK_TARGETS_PAYLOAD_END -->',
+      ].join('\n');
     }
 
     document.getElementById('addTarget').addEventListener('click', () => addTarget());
@@ -144,76 +134,23 @@
       buyButton: 'single_add_to_cart_button',
     });
 
-    document.getElementById('cfgForm').addEventListener('submit', async (e) => {
+    document.getElementById('cfgForm').addEventListener('submit', (e) => {
       e.preventDefault();
 
-      const items = collectTargets();
-      if (!items.length) {
+      const targets = collectTargets();
+      if (!targets.length) {
         log('Please add at least one valid target.');
         return;
       }
 
-      const cfg = {
-        owner: document.getElementById('owner').value.trim(),
-        repo: document.getElementById('repo').value.trim(),
-        branch: document.getElementById('branch').value.trim(),
-        token: document.getElementById('token').value.trim(),
-      };
+      const owner = document.getElementById('owner').value.trim();
+      const repo = document.getElementById('repo').value.trim();
+      const title = `[config-update] Update stock targets (${targets.length})`;
+      const body = buildIssueBody(targets);
+      const url = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/new?title=${encodeURIComponent(title)}&labels=${encodeURIComponent('auto-config-update')}&body=${encodeURIComponent(body)}`;
 
-      const path = 'check_scurfa.py';
-      const base = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
-
-      try {
-        log('Fetching current check_scurfa.py...');
-        const getResp = await fetch(`${base}?ref=${encodeURIComponent(cfg.branch)}`, {
-          headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' },
-        });
-        if (!getResp.ok) throw new Error(`Fetch failed (${getResp.status})`);
-
-        const fileJson = await getResp.json();
-        const sha = fileJson.sha;
-        const currentText = atob(fileJson.content.replace(/\n/g, ''));
-
-        const targetsBlock = buildTargetsBlock(items);
-        const pattern = /TARGETS\s*=\s*\[[\s\S]*?\]\n\n# Get these from your GitHub Secrets/;
-        if (!pattern.test(currentText)) {
-          throw new Error('Could not find TARGETS block in check_scurfa.py');
-        }
-
-        const next = currentText.replace(
-          pattern,
-          `${targetsBlock}\n\n# Get these from your GitHub Secrets`,
-        );
-
-        const message = `Update stock targets (${items.length} target${items.length === 1 ? '' : 's'})`;
-        const content = btoa(unescape(encodeURIComponent(next)));
-
-        log('Pushing commit to GitHub...');
-        const putResp = await fetch(base, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${cfg.token}`,
-            Accept: 'application/vnd.github+json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message,
-            content,
-            sha,
-            branch: cfg.branch,
-          }),
-        });
-
-        if (!putResp.ok) {
-          const errText = await putResp.text();
-          throw new Error(`Commit failed (${putResp.status}): ${errText}`);
-        }
-
-        const result = await putResp.json();
-        log(`Success! Commit created: ${result.commit?.html_url || 'done'}`);
-      } catch (err) {
-        log(`Error: ${err.message}`);
-      }
+      log('Opening GitHub issue creation page. Submit the issue, then the workflow will apply updates automatically.');
+      window.open(url, '_blank', 'noopener');
     });
   </script>
 </body>

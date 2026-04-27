@@ -1,0 +1,91 @@
+name: Apply target config from issue
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    if: contains(github.event.issue.labels.*.name, 'auto-config-update')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Apply TARGETS block from issue payload
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+
+          body = os.environ.get("ISSUE_BODY", "")
+          m = re.search(
+              r"<!-- STOCK_TARGETS_PAYLOAD_START -->\s*```json\s*(.*?)\s*```\s*<!-- STOCK_TARGETS_PAYLOAD_END -->",
+              body,
+              flags=re.S,
+          )
+          if not m:
+              raise SystemExit("Payload markers not found in issue body.")
+
+          targets = json.loads(m.group(1))
+          if not isinstance(targets, list) or not targets:
+              raise SystemExit("Targets payload must be a non-empty list.")
+
+          rendered = "TARGETS = " + json.dumps(targets, indent=4, ensure_ascii=False)
+
+          path = "check_scurfa.py"
+          with open(path, "r", encoding="utf-8") as f:
+              src = f.read()
+
+          pattern = r"TARGETS\s*=\s*\[[\s\S]*?\]\n\n# Get these from your GitHub Secrets"
+          if not re.search(pattern, src):
+              raise SystemExit("Could not locate TARGETS block in check_scurfa.py")
+
+          updated = re.sub(
+              pattern,
+              rendered + "\n\n# Get these from your GitHub Secrets",
+              src,
+              count=1,
+          )
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(updated)
+          PY
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add check_scurfa.py
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update TARGETS from issue #${{ github.event.issue.number }}"
+            git push
+          fi
+
+      - name: Comment and close issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '✅ TARGETS updated from this issue payload. Closing this request.',
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed',
+            });
