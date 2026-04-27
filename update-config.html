@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SCURFA Config Updater</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: 0.5rem; }
+    .hint { font-size: 0.95rem; color: #444; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 1rem; margin: 0.75rem 0; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 0.6rem; }
+    label { font-weight: 600; display: block; }
+    input { width: 100%; padding: 0.55rem; font-size: 1rem; margin-top: 0.2rem; }
+    button { padding: 0.65rem 0.9rem; font-size: 1rem; cursor: pointer; }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .url-row { display: flex; align-items: end; gap: 0.5rem; }
+    .url-row label { flex: 1; }
+    .icon-btn { min-width: 2.2rem; font-weight: 700; }
+    .danger { background: #fff0f0; border: 1px solid #ffc8c8; }
+    pre { background: #f4f4f4; padding: 0.8rem; border-radius: 8px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>SCURFA Bulk Target Updater</h1>
+  <p class="hint">Add as many URL + stock-rule combinations as you want. Use the <strong>-</strong> button next to each URL to delete an entry. After any add/delete, click submit to rewrite <code>TARGETS</code> in <code>check_scurfa.py</code> and commit to GitHub.</p>
+
+  <div class="row" style="margin: 1rem 0;">
+    <button id="addTarget" type="button">+ Add Target</button>
+  </div>
+
+  <form id="cfgForm" class="grid">
+    <div id="targets"></div>
+
+    <label>GitHub Owner
+      <input id="owner" required placeholder="your-github-username-or-org" />
+    </label>
+
+    <label>Repository Name
+      <input id="repo" value="stock-checker" required />
+    </label>
+
+    <label>Branch
+      <input id="branch" value="main" required />
+    </label>
+
+    <label>GitHub Personal Access Token (repo scope)
+      <input id="token" type="password" required placeholder="ghp_..." />
+    </label>
+
+    <button type="submit">Update check_scurfa.py and Push</button>
+  </form>
+
+  <h3>Status</h3>
+  <pre id="status">Idle.</pre>
+
+  <template id="targetTemplate">
+    <div class="card target-card">
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <strong>Target <span class="target-index"></span></strong>
+      </div>
+
+      <label>Name (optional)
+        <input class="name" placeholder="Titanium Yellow" />
+      </label>
+
+      <div class="url-row">
+        <button type="button" class="removeTarget danger icon-btn" title="Delete this target">-</button>
+        <label>URL
+          <input class="url" required placeholder="https://example.com/product" />
+        </label>
+      </div>
+
+      <label>is_sold_out (regex text)
+        <input class="soldOut" required placeholder="Awaiting Stock" />
+      </label>
+
+      <label>buy_button (button class regex text)
+        <input class="buyButton" required placeholder="single_add_to_cart_button" />
+      </label>
+    </div>
+  </template>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const targetsEl = document.getElementById('targets');
+    const template = document.getElementById('targetTemplate');
+
+    const log = (msg) => { statusEl.textContent = msg; };
+
+    const escPy = (v) => String(v).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+
+    function refreshIndexes() {
+      [...targetsEl.querySelectorAll('.target-card')].forEach((card, i) => {
+        card.querySelector('.target-index').textContent = String(i + 1);
+      });
+    }
+
+    function addTarget(initial = {}) {
+      const node = template.content.cloneNode(true);
+      const card = node.querySelector('.target-card');
+      card.querySelector('.name').value = initial.name || '';
+      card.querySelector('.url').value = initial.url || '';
+      card.querySelector('.soldOut').value = initial.soldOut || 'Awaiting Stock';
+      card.querySelector('.buyButton').value = initial.buyButton || 'single_add_to_cart_button';
+
+      card.querySelector('.removeTarget').addEventListener('click', () => {
+        card.remove();
+        refreshIndexes();
+      });
+
+      targetsEl.appendChild(node);
+      refreshIndexes();
+    }
+
+    function collectTargets() {
+      const cards = [...targetsEl.querySelectorAll('.target-card')];
+      return cards.map((card) => ({
+        name: card.querySelector('.name').value.trim(),
+        url: card.querySelector('.url').value.trim(),
+        soldOut: card.querySelector('.soldOut').value.trim(),
+        buyButton: card.querySelector('.buyButton').value.trim(),
+      })).filter((t) => t.url && t.soldOut && t.buyButton);
+    }
+
+    function buildTargetsBlock(items) {
+      const rows = items.map((item) => [
+        '    {',
+        item.name ? `        "name": "${escPy(item.name)}",` : null,
+        `        "url": "${escPy(item.url)}",`,
+        `        "sold_out_pattern": "${escPy(item.soldOut)}",`,
+        `        "buy_button_class_pattern": "${escPy(item.buyButton)}",`,
+        '    },',
+      ].filter(Boolean).join('\n'));
+
+      return `TARGETS = [\n${rows.join('\n')}\n]`;
+    }
+
+    document.getElementById('addTarget').addEventListener('click', () => addTarget());
+    addTarget({
+      name: 'Titanium Yellow',
+      url: 'https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/',
+      soldOut: 'Awaiting Stock',
+      buyButton: 'single_add_to_cart_button',
+    });
+
+    document.getElementById('cfgForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const items = collectTargets();
+      if (!items.length) {
+        log('Please add at least one valid target.');
+        return;
+      }
+
+      const cfg = {
+        owner: document.getElementById('owner').value.trim(),
+        repo: document.getElementById('repo').value.trim(),
+        branch: document.getElementById('branch').value.trim(),
+        token: document.getElementById('token').value.trim(),
+      };
+
+      const path = 'check_scurfa.py';
+      const base = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
+
+      try {
+        log('Fetching current check_scurfa.py...');
+        const getResp = await fetch(`${base}?ref=${encodeURIComponent(cfg.branch)}`, {
+          headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' },
+        });
+        if (!getResp.ok) throw new Error(`Fetch failed (${getResp.status})`);
+
+        const fileJson = await getResp.json();
+        const sha = fileJson.sha;
+        const currentText = atob(fileJson.content.replace(/\n/g, ''));
+
+        const targetsBlock = buildTargetsBlock(items);
+        const pattern = /TARGETS\s*=\s*\[[\s\S]*?\]\n\n# Get these from your GitHub Secrets/;
+        if (!pattern.test(currentText)) {
+          throw new Error('Could not find TARGETS block in check_scurfa.py');
+        }
+
+        const next = currentText.replace(
+          pattern,
+          `${targetsBlock}\n\n# Get these from your GitHub Secrets`,
+        );
+
+        const message = `Update stock targets (${items.length} target${items.length === 1 ? '' : 's'})`;
+        const content = btoa(unescape(encodeURIComponent(next)));
+
+        log('Pushing commit to GitHub...');
+        const putResp = await fetch(base, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${cfg.token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message,
+            content,
+            sha,
+            branch: cfg.branch,
+          }),
+        });
+
+        if (!putResp.ok) {
+          const errText = await putResp.text();
+          throw new Error(`Commit failed (${putResp.status}): ${errText}`);
+        }
+
+        const result = await putResp.json();
+        log(`Success! Commit created: ${result.commit?.html_url || 'done'}`);
+      } catch (err) {
+        log(`Error: ${err.message}`);
+      }
+    });
+  </script>
+</body>
+</html>
