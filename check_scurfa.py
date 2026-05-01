@@ -1,3 +1,4 @@
+import argparse
 import os
 import random
 import re
@@ -9,7 +10,6 @@ from bs4 import BeautifulSoup
 # --- CONFIGURATION ---
 URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
 NTFY_TOPIC = "scurfa_yellow_titan_2026"
-AUTO_BUY = os.environ.get("AUTO_BUY", "false").lower() == "true"
 
 # Get these from your GitHub Secrets (see Step 3)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -163,7 +163,7 @@ def auto_buy_with_playwright():
             browser.close()
 
 
-def check_stock():
+def check_stock(auto_buy=False):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     time.sleep(random.randint(5, 30))
 
@@ -181,7 +181,7 @@ def check_stock():
         if not is_sold_t and buy_button:
             msg = f"🚨 *ITEM IN STOCK!* 🚨\nIt is ready! [Buy Now]({URL})"
             send_notifications(msg)
-            if AUTO_BUY:
+            if auto_buy:
                 auto_buy_with_playwright()
         else:
             print(f"[{time.strftime('%H:%M:%S')}] Still awaiting stock.")
@@ -191,4 +191,8 @@ def check_stock():
 
 
 if __name__ == "__main__":
-    check_stock()
+    parser = argparse.ArgumentParser(description="Check stock and optionally run Playwright autobuy flow.")
+    parser.add_argument("--autobuy", action="store_true", default=False, help="Enable Playwright autobuy flow (default: disabled).")
+    args = parser.parse_args()
+
+    check_stock(auto_buy=args.autobuy)

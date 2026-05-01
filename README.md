@@ -2,7 +2,7 @@ Scurfa Tracker Active
 
 ## Auto-buy with Playwright
 
-The checker can optionally start a Playwright-driven checkout flow when stock is detected.
+The checker can optionally start a Playwright-driven checkout flow when stock is detected, but only when the `--autobuy` flag is passed (default is off).
 
 ### Install
 
@@ -14,7 +14,7 @@ playwright install chromium
 ### Usage
 
 ```bash
-AUTO_BUY=true python check_scurfa.py
+python check_scurfa.py --autobuy
 ```
 
 By default, checkout fields are filled but order submission is blocked for safety.
