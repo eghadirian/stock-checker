@@ -7,9 +7,9 @@ import requests
 from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
-URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
-URL = "https://www.scurfawatches.com/product/top-side-crew-rose-gold-black-dial-mens/" #-- in -rest in
-# URL = "https://www.scurfawatches.com/product/top-side-crew-stainless-steel-black-dial-mens/" -- out - rest in
+URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/" # -- in -rest out
+# URL = "https://www.scurfawatches.com/product/top-side-crew-rose-gold-black-dial-mens/" #-- in -rest in
+# URL = "https://www.scurfawatches.com/product/top-side-crew-stainless-steel-black-dial-mens/" # out - rest in
 NTFY_TOPIC = "scurfa_yellow_titan_2026"
 
 # Get these from your GitHub Secrets (see Step 3)
