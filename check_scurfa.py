@@ -107,7 +107,9 @@ def check_stock():
         buy_buttons = soup.find_all(is_cart_button)
         has_cart_form = has_add_to_cart_form(soup)
 
-        if not is_sold_t and (buy_buttons or has_cart_form):
+        # Some themes keep stale "awaiting stock" text in the page while still rendering
+        # a live add-to-basket flow. Treat active purchase controls as source of truth.
+        if buy_buttons or has_cart_form:
             msg = f"🚨 *ITEM IN STOCK!* 🚨\nIt is ready! [Buy Now]({URL})"
             send_notifications(msg)
             return
