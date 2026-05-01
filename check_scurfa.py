@@ -68,13 +68,45 @@ def is_cart_button(tag):
     return False
 
 
-def has_add_to_cart_form(soup):
-    """Detect an active add-to-cart form used by many e-commerce templates."""
-    form = soup.find('form', attrs={'class': re.compile(r'cart', re.I)})
-    if not form:
+def _is_enabled(tag):
+    """Return True only for purchase controls that are not disabled."""
+    disabled = tag.get('disabled')
+    aria_disabled = str(tag.get('aria-disabled', '')).lower()
+
+    if disabled is not None:
+        return False
+    if aria_disabled == 'true':
+        return False
+    return True
+
+
+def has_product_add_to_cart(soup):
+    """Detect add-to-cart only for the current product section, not related products."""
+    # WooCommerce product pages usually wrap the item in .single-product .product.
+    product_root = soup.select_one('div.single-product div.product') or soup.select_one('div.product')
+    if not product_root:
         return False
 
-    return form.find('button', attrs={'name': re.compile(r'add-to-cart', re.I)}) is not None
+    # The form.cart inside product summary is the canonical buy flow for the viewed item.
+    product_form = product_root.select_one('div.summary form.cart') or product_root.select_one('form.cart')
+    if not product_form:
+        return False
+
+    # Require an enabled submit control that is specifically an add-to-cart action.
+    add_to_cart_button = product_form.find(
+        'button',
+        attrs={
+            'name': re.compile(r'add-to-cart', re.I),
+            'class': re.compile(r'single_add_to_cart_button|add_to_cart_button', re.I),
+        },
+    )
+    if add_to_cart_button and _is_enabled(add_to_cart_button):
+        return True
+
+    # Fallback for themes using non-standard button classes but standard form inputs.
+    add_to_cart_input = product_form.find('input', attrs={'name': re.compile(r'add-to-cart', re.I)})
+    submit_input = product_form.find('input', attrs={'type': re.compile(r'submit', re.I)})
+    return bool(add_to_cart_input and submit_input and _is_enabled(submit_input))
 
 
 def is_sold_out(soup):
@@ -106,18 +138,18 @@ def check_stock():
 
         is_sold_t = is_sold_out(soup)
         buy_buttons = soup.find_all(is_cart_button)
-        has_cart_form = has_add_to_cart_form(soup)
+        has_cart_form = has_product_add_to_cart(soup)
 
         # Some themes keep stale "awaiting stock" text in the page while still rendering
         # a live add-to-basket flow. Treat active purchase controls as source of truth.
-        if buy_buttons or has_cart_form:
+        if has_cart_form:
             msg = f"🚨 *ITEM IN STOCK!* 🚨\nIt is ready! [Buy Now]({URL})"
             send_notifications(msg)
             return
 
         print(
             f"[{time.strftime('%H:%M:%S')}] Still awaiting stock "
-            f"(sold_out={is_sold_t}, buy_buttons={len(buy_buttons)}, cart_form={has_cart_form})."
+            f"(sold_out={is_sold_t}, page_buy_buttons={len(buy_buttons)}, product_cart_form={has_cart_form})."
         )
 
     except Exception as e:
