@@ -40,7 +40,10 @@ def is_cart_button(tag):
 
     # A generic regex pattern for common shopping actions
     # Matches: add to cart, buy now, purchase, checkout, etc.
-    pattern = re.compile(r'add.*to.*cart|buy.*now|purchase|check.*out|atc', re.I)
+    pattern = re.compile(
+        r'add.*to.*(cart|basket)|buy.*now|purchase|check.*out|atc',
+        re.I
+    )
 
     # 1. Check the visible text (e.g., <button>Add to Cart</button>)
     if pattern.search(tag.get_text(strip=True)):
@@ -56,8 +59,6 @@ def is_cart_button(tag):
             return True
 
     return False
-
-import re
 
 def is_sold_out(soup):
     # List of common phrases used when an item is unavailable
