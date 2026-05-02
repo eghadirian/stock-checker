@@ -5,6 +5,8 @@ import time
 
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 # --- CONFIGURATION ---
 URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
@@ -17,6 +19,22 @@ USE_AI_AVAILABILITY = os.environ.get('USE_AI_AVAILABILITY', '1') == '1'
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
+AUTO_CHECKOUT_ENABLED = os.environ.get('AUTO_CHECKOUT_ENABLED', '0') == '1'
+CHECKOUT_EMAIL = os.environ.get('CHECKOUT_EMAIL')
+CHECKOUT_FIRST_NAME = os.environ.get('CHECKOUT_FIRST_NAME')
+CHECKOUT_LAST_NAME = os.environ.get('CHECKOUT_LAST_NAME')
+CHECKOUT_PHONE = os.environ.get('CHECKOUT_PHONE')
+CHECKOUT_ADDRESS_1 = os.environ.get('CHECKOUT_ADDRESS_1')
+CHECKOUT_ADDRESS_2 = os.environ.get('CHECKOUT_ADDRESS_2', '')
+CHECKOUT_CITY = os.environ.get('CHECKOUT_CITY')
+CHECKOUT_STATE = os.environ.get('CHECKOUT_STATE')
+CHECKOUT_POSTCODE = os.environ.get('CHECKOUT_POSTCODE')
+CHECKOUT_COUNTRY = os.environ.get('CHECKOUT_COUNTRY', 'US')
+CHECKOUT_CC_NUMBER = os.environ.get('CHECKOUT_CC_NUMBER')
+CHECKOUT_CC_EXP_MONTH = os.environ.get('CHECKOUT_CC_EXP_MONTH')
+CHECKOUT_CC_EXP_YEAR = os.environ.get('CHECKOUT_CC_EXP_YEAR')
+CHECKOUT_CC_CVC = os.environ.get('CHECKOUT_CC_CVC')
 
 
 def send_notifications(message):
@@ -39,6 +57,76 @@ def send_notifications(message):
             print("Telegram sent.")
         except Exception as e:
             print(f"Telegram failed: {e}")
+
+
+def _checkout_config_is_complete():
+    required = [
+        CHECKOUT_EMAIL,
+        CHECKOUT_FIRST_NAME,
+        CHECKOUT_LAST_NAME,
+        CHECKOUT_PHONE,
+        CHECKOUT_ADDRESS_1,
+        CHECKOUT_CITY,
+        CHECKOUT_STATE,
+        CHECKOUT_POSTCODE,
+        CHECKOUT_CC_NUMBER,
+        CHECKOUT_CC_EXP_MONTH,
+        CHECKOUT_CC_EXP_YEAR,
+        CHECKOUT_CC_CVC,
+    ]
+    return all(bool(v) for v in required)
+
+
+def attempt_guest_checkout():
+    if not AUTO_CHECKOUT_ENABLED:
+        print("Auto checkout skipped: AUTO_CHECKOUT_ENABLED is false.")
+        return
+
+    if not _checkout_config_is_complete():
+        print("Auto checkout skipped: missing one or more checkout secrets.")
+        return
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        try:
+            page.goto(URL, wait_until='domcontentloaded', timeout=45_000)
+            page.get_by_role('button', name=re.compile(r'add to cart', re.I)).click(timeout=15_000)
+            page.goto("https://www.scurfawatches.com/checkout/", wait_until='domcontentloaded', timeout=45_000)
+
+            page.fill('#billing_email', CHECKOUT_EMAIL)
+            page.fill('#billing_first_name', CHECKOUT_FIRST_NAME)
+            page.fill('#billing_last_name', CHECKOUT_LAST_NAME)
+            page.fill('#billing_phone', CHECKOUT_PHONE)
+            page.fill('#billing_address_1', CHECKOUT_ADDRESS_1)
+            if CHECKOUT_ADDRESS_2:
+                page.fill('#billing_address_2', CHECKOUT_ADDRESS_2)
+            page.fill('#billing_city', CHECKOUT_CITY)
+            page.fill('#billing_state', CHECKOUT_STATE)
+            page.fill('#billing_postcode', CHECKOUT_POSTCODE)
+            page.select_option('#billing_country', CHECKOUT_COUNTRY)
+
+            cc_input = page.locator('input[name*="cardnumber"], iframe[name*="card"]')
+            if cc_input.count() == 0:
+                raise RuntimeError("Card input was not found on checkout page.")
+
+            card_number_frame = page.frame_locator('iframe[name*="card-number"], iframe[title*="number"]')
+            card_exp_frame = page.frame_locator('iframe[name*="card-expiry"], iframe[title*="expiration"]')
+            card_cvc_frame = page.frame_locator('iframe[name*="card-cvc"], iframe[title*="security"]')
+
+            card_number_frame.locator('input[name="cardnumber"], input[placeholder*="Card number"]').first.fill(CHECKOUT_CC_NUMBER)
+            card_exp_frame.locator('input[name="exp-date"], input[placeholder*="MM / YY"]').first.fill(
+                f"{CHECKOUT_CC_EXP_MONTH}/{CHECKOUT_CC_EXP_YEAR}"
+            )
+            card_cvc_frame.locator('input[name="cvc"], input[placeholder*="CVC"]').first.fill(CHECKOUT_CC_CVC)
+
+            place_order_btn = page.get_by_role('button', name=re.compile(r'place order', re.I))
+            place_order_btn.click(timeout=15_000)
+            print("Auto checkout attempted (guest order submitted).")
+        except (PlaywrightTimeoutError, Exception) as e:
+            print(f"Auto checkout failed: {e}")
+        finally:
+            browser.close()
 
 
 def _is_enabled(tag):
@@ -203,6 +291,7 @@ def check_stock():
         if in_stock and not sold_out_main:
             msg = f"🚨 *ITEM IN STOCK!* 🚨\nIt is ready! [Buy Now]({URL})"
             send_notifications(msg)
+            attempt_guest_checkout()
             return
 
         print(
