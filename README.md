@@ -1,38 +1,32 @@
 # Scurfa Tracker Active
 
-## Stock detection strategy (exact product only)
+## Exact-product stock detection
 
-This checker now prioritizes **main-product-only** signals to avoid false positives from related products, ads, and upsells:
+The checker prioritizes main-product-only signals so it doesn't confuse related products, ads, or upsells with the watched item.
 
-1. Reads the page's main product title (`h1.product_title`).
-2. Checks Product JSON-LD (`application/ld+json`) for `InStock` / `OutOfStock`, scoped to that exact product name.
-3. Verifies an enabled add-to-cart control inside the **main product** `form.cart` only.
-4. Uses sold-out text only from the main product container (not global page text).
+Signal order:
+1. Product JSON-LD scoped to the exact product title (`InStock` / `OutOfStock`).
+2. Enabled add-to-cart flow in the main `form.cart`.
+3. Sold-out phrases in the main product container only.
+4. Optional AI vote (complementary, never primary).
 
-## Library research and recommendation
+## Optional AI enhancement (free API-compatible)
 
-For this specific use case (binary in-stock checks on one product URL), these are the best practical options:
+You can complement regex/rules with a free-tier LLM/NLI classifier from Hugging Face Inference API.
 
-- **Best default: BeautifulSoup + structured-data checks (current approach)**
-  - Reliable for WooCommerce product pages.
-  - Fast, low-cost, deterministic.
-  - No LLM/API dependency.
+Set environment variables:
+- `HF_TOKEN` = your Hugging Face token
+- `USE_AI_AVAILABILITY=1` (default)
+- optional `HF_MODEL` (default: `facebook/bart-large-mnli`)
 
-- **Best upgrade for schema reliability: `extruct`**
-  - Purpose-built for extracting JSON-LD/microdata/RDFa.
-  - Great when themes change markup often.
-  - Recommended if you monitor many stores with mixed templates.
+Why this setup:
+- deterministic rules remain the source of truth;
+- AI is used only as a tie-breaker/extra hint when page copy is ambiguous;
+- keeps false alerts lower than pure LLM extraction.
 
-- **When to use Crawl4AI**
-  - Strong for JS-heavy pages and broader crawling workflows.
-  - Heavier runtime (Playwright/browser) than needed for one product check.
+## Library choice guidance
 
-- **When to use ScrapeGraphAI**
-  - Useful for unstructured extraction tasks across many unknown site layouts.
-  - LLM-based extraction can be less deterministic for strict stock/not-stock alerting.
-
-### Practical recommendation
-
-- Keep this script as baseline for Scurfa/WooCommerce pages.
-- Add `extruct` if you want more robust structured-data parsing.
-- Move to Crawl4AI only if the target site requires rendered JavaScript to expose stock state.
+- **Best baseline for this project:** `requests + BeautifulSoup` + structured signals (current implementation).
+- **Best parser upgrade:** `extruct` for robust schema extraction across mixed templates.
+- **Use Crawl4AI** if stock state only appears after JS rendering.
+- **Use ScrapeGraphAI** for broader unstructured extraction tasks, not strict binary availability alerts.

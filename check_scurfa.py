@@ -7,18 +7,19 @@ import requests
 from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
-URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/" # -- in -rest out
-# URL = "https://www.scurfawatches.com/product/top-side-crew-rose-gold-black-dial-mens/" #-- in -rest in
-# URL = "https://www.scurfawatches.com/product/top-side-crew-stainless-steel-black-dial-mens/" # out - rest in
+URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
 NTFY_TOPIC = "scurfa_yellow_titan_2026"
 
-# Get these from your GitHub Secrets (see Step 3)
+# Optional AI signal via Hugging Face Inference API (free tier available with token)
+HF_TOKEN = os.environ.get('HF_TOKEN')
+HF_MODEL = os.environ.get('HF_MODEL', 'facebook/bart-large-mnli')
+USE_AI_AVAILABILITY = os.environ.get('USE_AI_AVAILABILITY', '1') == '1'
+
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 
 def send_notifications(message):
-    # 1. Primary: ntfy.sh
     try:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
@@ -30,7 +31,6 @@ def send_notifications(message):
     except Exception as e:
         print(f"ntfy failed: {e}")
 
-    # 2. Backup: Telegram
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         try:
             tg_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -42,42 +42,34 @@ def send_notifications(message):
 
 
 def _is_enabled(tag):
-    """Return True only for purchase controls that are not disabled."""
     disabled = tag.get('disabled')
     aria_disabled = str(tag.get('aria-disabled', '')).lower()
-
-    if disabled is not None:
-        return False
-    if aria_disabled == 'true':
-        return False
-    return True
+    return disabled is None and aria_disabled != 'true'
 
 
 def _extract_main_product_name(soup):
-    """Try to identify the exact product name for this URL page."""
-    # Best source on WooCommerce product pages.
     heading = soup.select_one('div.single-product div.product h1.product_title, h1.product_title')
     if heading and heading.get_text(strip=True):
         return heading.get_text(strip=True)
 
-    # Fallbacks.
     og_title = soup.find('meta', attrs={'property': 'og:title'})
     if og_title and og_title.get('content'):
         return og_title.get('content').strip()
 
     if soup.title and soup.title.get_text(strip=True):
         return soup.title.get_text(strip=True)
-
     return None
 
 
+def _main_product_root(soup):
+    return soup.select_one('div.single-product div.product') or soup.select_one('div.product')
+
+
 def has_main_product_add_to_cart(soup):
-    """Detect add-to-cart only for the current product section, not related products/ads."""
-    product_root = soup.select_one('div.single-product div.product') or soup.select_one('div.product')
+    product_root = _main_product_root(soup)
     if not product_root:
         return False
 
-    # Main item flow is in summary/cart under the root product.
     product_form = product_root.select_one('div.summary form.cart') or product_root.select_one('form.cart')
     if not product_form:
         return False
@@ -92,14 +84,12 @@ def has_main_product_add_to_cart(soup):
     if add_to_cart_button and _is_enabled(add_to_cart_button):
         return True
 
-    # Some themes use submit input with add-to-cart hidden input.
     add_to_cart_input = product_form.find('input', attrs={'name': re.compile(r'add-to-cart', re.I)})
     submit_input = product_form.find('input', attrs={'type': re.compile(r'submit', re.I)})
     return bool(add_to_cart_input and submit_input and _is_enabled(submit_input))
 
 
 def has_main_product_schema_in_stock(soup):
-    """Use structured Product schema as a strong signal for exact product availability."""
     main_name = _extract_main_product_name(soup)
     scripts = soup.find_all('script', attrs={'type': 'application/ld+json'})
 
@@ -111,14 +101,11 @@ def has_main_product_schema_in_stock(soup):
         text = raw.lower()
         if '"@type"' not in text or 'product' not in text:
             continue
-
-        # Scope to the main product only when possible.
         if main_name and main_name.lower() not in text:
             continue
 
         if 'instock' in text:
             return True
-
         if 'outofstock' in text:
             return False
 
@@ -126,22 +113,72 @@ def has_main_product_schema_in_stock(soup):
 
 
 def is_sold_out_in_main_product(soup):
-    """Look for sold-out copy only in the main product container."""
-    product_root = soup.select_one('div.single-product div.product') or soup.select_one('div.product')
+    product_root = _main_product_root(soup)
     if not product_root:
         return False
 
-    sold_out_phrases = [
-        r'out of stock',
-        r'sold out',
-        r'awaiting stock',
-        r'unavailable',
-        r'backorder',
-        r'not in stock',
-    ]
+    sold_out_phrases = [r'out of stock', r'sold out', r'awaiting stock', r'unavailable', r'backorder', r'not in stock']
     pattern = re.compile('|'.join(sold_out_phrases), re.I)
-    found = product_root.find(string=pattern)
-    return found is not None
+    return product_root.find(string=pattern) is not None
+
+
+def _main_product_text_for_ai(soup, max_chars=2500):
+    product_root = _main_product_root(soup)
+    if not product_root:
+        return ''
+
+    # Keep content limited to avoid sending unrelated sections to AI.
+    text = ' '.join(product_root.stripped_strings)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:max_chars]
+
+
+def ai_availability_vote(soup):
+    """Optional AI vote: returns True (in stock), False (out), or None (unknown/disabled)."""
+    if not USE_AI_AVAILABILITY or not HF_TOKEN:
+        return None
+
+    context = _main_product_text_for_ai(soup)
+    if not context:
+        return None
+
+    labels = ["in stock", "out of stock", "unknown"]
+    payload = {
+        "inputs": context,
+        "parameters": {
+            "candidate_labels": labels,
+            "multi_label": False,
+            "hypothesis_template": "This product is {}.",
+        },
+    }
+
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+
+    try:
+        result = requests.post(url, headers=headers, json=payload, timeout=20)
+        if result.status_code != 200:
+            print(f"AI availability skipped (status={result.status_code}).")
+            return None
+
+        data = result.json()
+        returned_labels = [label.lower() for label in data.get('labels', [])]
+        returned_scores = data.get('scores', [])
+        if not returned_labels or not returned_scores:
+            return None
+
+        top = returned_labels[0]
+        top_score = float(returned_scores[0])
+        if top_score < 0.60:
+            return None
+        if top == 'in stock':
+            return True
+        if top == 'out of stock':
+            return False
+        return None
+    except Exception as e:
+        print(f"AI availability skipped ({e}).")
+        return None
 
 
 def check_stock():
@@ -159,9 +196,10 @@ def check_stock():
         schema_stock = has_main_product_schema_in_stock(soup)
         has_cart_form = has_main_product_add_to_cart(soup)
         sold_out_main = is_sold_out_in_main_product(soup)
+        ai_vote = ai_availability_vote(soup)
 
-        # Decision order: exact product schema -> exact product add-to-cart flow -> sold-out signal.
-        in_stock = (schema_stock is True) or has_cart_form
+        # Deterministic signals first; AI only complements when deterministic checks conflict/miss.
+        in_stock = (schema_stock is True) or has_cart_form or (ai_vote is True and not sold_out_main)
         if in_stock and not sold_out_main:
             msg = f"🚨 *ITEM IN STOCK!* 🚨\nIt is ready! [Buy Now]({URL})"
             send_notifications(msg)
@@ -169,7 +207,7 @@ def check_stock():
 
         print(
             f"[{time.strftime('%H:%M:%S')}] Still awaiting stock "
-            f"(schema_stock={schema_stock}, product_cart_form={has_cart_form}, sold_out_main={sold_out_main})."
+            f"(schema_stock={schema_stock}, product_cart_form={has_cart_form}, sold_out_main={sold_out_main}, ai_vote={ai_vote})."
         )
 
     except Exception as e:
