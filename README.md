@@ -18,7 +18,8 @@ You can complement regex/rules with a free-tier LLM/NLI classifier from Hugging 
 
 - `HF_TOKEN`: your Hugging Face access token used to call the Inference API.
 - `HF_MODEL`: model id to query (default: `facebook/bart-large-mnli`).
-- `USE_AI_AVAILABILITY`: feature flag (`1` enabled, `0` disabled).
+- `RUN_STOCK_CHECK`: script execution flag (`1`/`true` runs the stock check, default `0`/false skips it).
+- `USE_AI_AVAILABILITY`: feature flag (`1`/`true` enabled, `0`/false disabled).
 
 ### Where values should be loaded from
 
@@ -39,6 +40,7 @@ Yes — and that is the recommended approach for CI/GitHub Actions.
 Use repository secrets such as:
 - `HF_TOKEN`
 - `HF_MODEL` (optional; only if you want to override default)
+- `RUN_STOCK_CHECK` (required to run the checker; default is `0`)
 - `USE_AI_AVAILABILITY` (optional; default is already `1`)
 
 In GitHub Actions, map secrets to env vars, for example:
@@ -47,6 +49,7 @@ In GitHub Actions, map secrets to env vars, for example:
 env:
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
   HF_MODEL: ${{ secrets.HF_MODEL }}
+  RUN_STOCK_CHECK: ${{ secrets.RUN_STOCK_CHECK }}
   USE_AI_AVAILABILITY: ${{ secrets.USE_AI_AVAILABILITY }}
 ```
 

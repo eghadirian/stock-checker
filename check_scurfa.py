@@ -3,23 +3,29 @@ import random
 import re
 import time
 
-import requests
-from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
 URL = "https://www.scurfawatches.com/product/diver-one-d1-500-titanium-yellow-2025/"
 NTFY_TOPIC = "scurfa_yellow_titan_2026"
 
+
+def _env_flag(name, default='0'):
+    return os.environ.get(name, default).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 # Optional AI signal via Hugging Face Inference API (free tier available with token)
 HF_TOKEN = os.environ.get('HF_TOKEN')
 HF_MODEL = os.environ.get('HF_MODEL', 'facebook/bart-large-mnli')
-USE_AI_AVAILABILITY = os.environ.get('USE_AI_AVAILABILITY', '1') == '1'
+USE_AI_AVAILABILITY = _env_flag('USE_AI_AVAILABILITY', '1')
+RUN_STOCK_CHECK = _env_flag('RUN_STOCK_CHECK', '0')
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 
 def send_notifications(message):
+    import requests
+
     try:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
@@ -155,6 +161,8 @@ def ai_availability_vote(soup):
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
+    import requests
+
     try:
         result = requests.post(url, headers=headers, json=payload, timeout=20)
         if result.status_code != 200:
@@ -182,6 +190,9 @@ def ai_availability_vote(soup):
 
 
 def check_stock():
+    import requests
+    from bs4 import BeautifulSoup
+
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     time.sleep(random.randint(5, 30))
 
@@ -215,4 +226,7 @@ def check_stock():
 
 
 if __name__ == "__main__":
-    check_stock()
+    if RUN_STOCK_CHECK:
+        check_stock()
+    else:
+        print("Stock check skipped because RUN_STOCK_CHECK is not enabled.")
