@@ -1,0 +1,3 @@
+# Private workbook containing watched URLs and purchase quantities.
+private/
+*.xlsx

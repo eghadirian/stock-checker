@@ -1,5 +1,45 @@
 # Scurfa Tracker Active
 
+## URL and quantity configuration
+
+The checker no longer hardcodes a single product URL. It reads an Excel workbook with these columns:
+
+| column | meaning |
+| --- | --- |
+| `url` | Product page to check. Must start with `http://` or `https://`. |
+| `number` | How many units you want to buy. Blank values default to `1`. |
+
+By default, the workbook is stored at:
+
+```text
+private/stock_urls.xlsx
+```
+
+Run the checker once to create a blank workbook template, then add rows under the `url` and `number` headers.
+
+You can override the workbook location with `STOCK_URLS_XLSX`:
+
+```bash
+STOCK_URLS_XLSX=/secure/path/stock_urls.xlsx python check_scurfa.py
+```
+
+The script creates the workbook parent directory with private permissions and applies a private file mode to the workbook. The default workbook mode is `0600`, which means only the owning user can read and write the file. If you want a trusted Unix group to have read/write access, place the file in a group-owned directory and set:
+
+```bash
+STOCK_URLS_FILE_MODE=0660 STOCK_URLS_XLSX=/secure/path/stock_urls.xlsx python check_scurfa.py
+```
+
+Keep the real workbook out of git. The repository ignores `private/` and `*.xlsx` so only people with filesystem or deployment secret access to the workbook path can read or write the URL list.
+
+## Quantity handling
+
+For each configured URL, the checker uses the `number` column as the desired purchase quantity. When the page exposes an available quantity (for example a quantity input maximum or text such as `Only 2 left`), notifications use the smaller of:
+
+1. the desired `number`, and
+2. the detected available quantity.
+
+If the page is in stock but does not expose an exact available quantity, the notification uses the requested `number`.
+
 ## Exact-product stock detection
 
 The checker prioritizes main-product-only signals so it doesn't confuse related products, ads, or upsells with the watched item.
